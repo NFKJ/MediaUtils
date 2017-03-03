@@ -2,6 +2,7 @@ package com.werb.mediautilsdemo.activity;
 
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -11,9 +12,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.view.MotionEvent;
 import android.view.SurfaceView;
 import android.view.View;
-import android.view.animation.Animation;
-import android.view.animation.AnimationSet;
-import android.view.animation.AnimationUtils;
+import android.widget.ImageView;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -23,28 +22,35 @@ import com.werb.mediautilsdemo.R;
 import com.werb.mediautilsdemo.widget.SendView;
 import com.werb.mediautilsdemo.widget.VideoProgressBar;
 
+import java.lang.ref.WeakReference;
 import java.util.UUID;
 
 /**
  * Created by wanbo on 2017/1/18.
  */
-
-public class VideoRecorderActivity extends AppCompatActivity {
-
+public class VideoRecorderActivity extends AppCompatActivity
+{
     private MediaUtils mediaUtils;
-    private boolean isCancel;
     private VideoProgressBar progressBar;
-    private int mProgress;
     private TextView btnInfo , btn;
-    private TextView view;
     private SendView send;
     private RelativeLayout recordLayout;
+    private SurfaceView surfaceView;
+
+    private boolean isBackCamera;
+    private boolean isCancel;
+    private int mProgress;
+
+    // 视频录制总时间，单位毫秒
+    private final int recordTotalTime = 11000;
+
+    private final Handler progressHandler = new ProgressHandler(this);
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_video);
-        SurfaceView surfaceView = (SurfaceView) findViewById(R.id.main_surface_view);
+        surfaceView = (SurfaceView) findViewById(R.id.main_surface_view);
         // setting
         mediaUtils = new MediaUtils(this);
         mediaUtils.setRecorderType(MediaUtils.MEDIA_VIDEO);
@@ -53,16 +59,26 @@ public class VideoRecorderActivity extends AppCompatActivity {
         mediaUtils.setSurfaceView(surfaceView);
         // btn
         send = (SendView) findViewById(R.id.view_send);
-//        view = (TextView) findViewById(R.id.view);
         btnInfo = (TextView) findViewById(R.id.tv_info);
         btn = (TextView) findViewById(R.id.main_press_control);
         btn.setOnTouchListener(btnTouch);
+
+        // 返回按钮事件
         findViewById(R.id.btn_close).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 finish();
             }
         });
+
+        // 切换摄像头事件
+        findViewById(R.id.btn_change).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                change();
+            }
+        });
+
         send.backLayout.setOnClickListener(backClick);
         send.selectLayout.setOnClickListener(selectClick);
         recordLayout = (RelativeLayout) findViewById(R.id.record_layout);
@@ -70,6 +86,23 @@ public class VideoRecorderActivity extends AppCompatActivity {
         progressBar = (VideoProgressBar) findViewById(R.id.main_progress_bar);
         progressBar.setOnProgressEndListener(listener);
         progressBar.setCancel(true);
+    }
+
+    /**
+     * 切换摄像头
+     */
+    private void change()
+    {
+        // 设置摄像头方向
+        mediaUtils.setOpenBackCamera(isBackCamera);
+
+        // 重新渲染视频控件，此时只会调用surfaceChanged方法
+        if (null != surfaceView) {
+            mediaUtils.setSurfaceView(surfaceView);
+        }
+
+        // 改变摄像头状态
+        isBackCamera = !isBackCamera;
     }
 
     @Override
@@ -124,7 +157,6 @@ public class VideoRecorderActivity extends AppCompatActivity {
                             break;
                     }
                 }
-
             }
             return ret;
         }
@@ -138,26 +170,41 @@ public class VideoRecorderActivity extends AppCompatActivity {
         }
     };
 
-    Handler handler = new Handler() {
+    // 以静态内部类的方法避免内存泄漏
+    private static class ProgressHandler extends Handler {
+        private final WeakReference<VideoRecorderActivity> thisActiviy;
+
+        private ProgressHandler(VideoRecorderActivity thisActiviy) {
+            this.thisActiviy = new WeakReference<>(thisActiviy);
+        }
+
         @Override
         public void handleMessage(Message msg) {
-            switch (msg.what) {
-                case 0:
-                    progressBar.setProgress(mProgress);
-                    if (mediaUtils.isRecording()) {
-                        mProgress = mProgress + 1;
-                        sendMessageDelayed(handler.obtainMessage(0), 100);
-                    }
-                    break;
+            if (null == thisActiviy.get()) {
+                return;
+            }
+            if (msg.what == 0) {
+                thisActiviy.get().updateProgress();
             }
         }
-    };
+    }
+
+    // 每隔 recordTotalTime/100 时间通知进度条更新
+    private void updateProgress()
+    {
+        progressBar.setProgress(mProgress);
+
+        if (mediaUtils.isRecording()) {
+            mProgress = mProgress + 1;
+            progressHandler.sendMessageDelayed(progressHandler.obtainMessage(0), recordTotalTime / 100);
+        }
+    }
 
     private void startView(){
         startAnim();
         mProgress = 0;
-        handler.removeMessages(0);
-        handler.sendMessage(handler.obtainMessage(0));
+        progressHandler.removeMessages(0);
+        progressHandler.sendMessage(progressHandler.obtainMessage(0));
     }
 
     private void moveView(){
@@ -172,7 +219,7 @@ public class VideoRecorderActivity extends AppCompatActivity {
         stopAnim();
         progressBar.setCancel(true);
         mProgress = 0;
-        handler.removeMessages(0);
+        progressHandler.removeMessages(0);
         btnInfo.setText("双击放大");
         if(isSave) {
             recordLayout.setVisibility(View.GONE);
@@ -188,7 +235,7 @@ public class VideoRecorderActivity extends AppCompatActivity {
                 ObjectAnimator.ofFloat(progressBar,"scaleX",1,1.3f),
                 ObjectAnimator.ofFloat(progressBar,"scaleY",1,1.3f)
         );
-        set.setDuration(250).start();
+        set.setDuration(200).start();
     }
 
     private void stopAnim(){
@@ -199,7 +246,7 @@ public class VideoRecorderActivity extends AppCompatActivity {
                 ObjectAnimator.ofFloat(progressBar,"scaleX",1.3f,1f),
                 ObjectAnimator.ofFloat(progressBar,"scaleY",1.3f,1f)
         );
-        set.setDuration(250).start();
+        set.setDuration(200).start();
     }
 
     private View.OnClickListener backClick = new View.OnClickListener() {
@@ -215,10 +262,14 @@ public class VideoRecorderActivity extends AppCompatActivity {
         @Override
         public void onClick(View v) {
             String path = mediaUtils.getTargetFilePath();
+
+            Bitmap thumbnail = mediaUtils.createVideoThumbnail(path);
+
+            ImageView viewById = (ImageView) findViewById(R.id.iv_thumb);
+            viewById.setImageBitmap(thumbnail);
             Toast.makeText(VideoRecorderActivity.this, "文件以保存至：" + path, Toast.LENGTH_SHORT).show();
             send.stopAnim();
             recordLayout.setVisibility(View.VISIBLE);
         }
     };
-
 }

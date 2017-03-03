@@ -39,7 +39,7 @@ public class AudioRecorderActivity extends AppCompatActivity {
         mediaUtils = new MediaUtils(this);
         mediaUtils.setRecorderType(MediaUtils.MEDIA_AUDIO);
         mediaUtils.setTargetDir(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC));
-        mediaUtils.setTargetName(UUID.randomUUID() + ".m4a");
+        mediaUtils.setTargetName(UUID.randomUUID() + ".mp3");
         // btn
         mic = (TextView) findViewById(R.id.tv_mic);
         info = (TextView) findViewById(R.id.tv_info);

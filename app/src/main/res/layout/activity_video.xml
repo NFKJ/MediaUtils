@@ -32,6 +32,22 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
+            <RelativeLayout
+                android:id="@+id/btn_change"
+                android:layout_width="50dp"
+                android:layout_height="50dp"
+                android:layout_centerVertical="true"
+                android:layout_alignParentLeft="true"
+                android:layout_marginLeft="50dp">
+
+                <ImageView
+                    android:layout_width="25dp"
+                    android:layout_height="25dp"
+                    android:src="@drawable/ic_close_white_24dp"
+                    android:layout_centerInParent="true" />
+
+            </RelativeLayout>
+
             <com.werb.mediautilsdemo.widget.VideoProgressBar
                 android:id="@+id/main_progress_bar"
                 android:layout_width="85dp"
@@ -77,5 +93,11 @@
 
     </RelativeLayout>
 
+    <ImageView
+        android:id="@+id/iv_thumb"
+        android:layout_width="120dp"
+        android:layout_height="wrap_content"
+        android:adjustViewBounds="true"
+        android:scaleType="centerCrop"/>
 
 </RelativeLayout>

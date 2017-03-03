@@ -7,7 +7,6 @@ import android.util.DisplayMetrics;
 /**
  * Created by wanbo on 2017/1/20.
  */
-
 public class Utils {
 
     private static Utils mInstance = null;

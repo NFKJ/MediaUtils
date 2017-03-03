@@ -2,28 +2,30 @@ package com.werb.mediautilsdemo;
 
 import android.app.Activity;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.hardware.Camera;
 import android.media.CamcorderProfile;
 import android.media.MediaMetadataRetriever;
 import android.media.MediaRecorder;
+import android.os.Build;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
+import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 
-import com.werb.mediautilsdemo.widget.AutoFitTextureView;
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.List;
 
 /**
  * Created by wanbo on 2017/1/18.
  */
-
 public class MediaUtils implements SurfaceHolder.Callback {
     private static final String TAG = "MediaUtils";
     public static final int MEDIA_AUDIO = 0;
@@ -32,7 +34,6 @@ public class MediaUtils implements SurfaceHolder.Callback {
     private MediaRecorder mMediaRecorder;
     private CamcorderProfile profile;
     private Camera mCamera;
-    private AutoFitTextureView textureView;
     private SurfaceView mSurfaceView;
     private SurfaceHolder mSurfaceHolder;
     private File targetDir;
@@ -41,17 +42,16 @@ public class MediaUtils implements SurfaceHolder.Callback {
     private int previewWidth, previewHeight;
     private int recorderType;
     private boolean isRecording;
+    private boolean isOpenBackCamera = true;
     private GestureDetector mDetector;
     private boolean isZoomIn = false;
-    private int or = 90;
 
-    public MediaUtils(Activity activity) {
-        this.activity = activity;
-    }
+    public MediaUtils(Activity activity) {   this.activity = activity;  }
 
-    public void setRecorderType(int type) {
-        this.recorderType = type;
-    }
+    public void setRecorderType(int type) {  this.recorderType = type;  }
+
+    // 设置摄像头方向
+    public void setOpenBackCamera(boolean isOpenBackCamera) {  this.isOpenBackCamera = isOpenBackCamera; }
 
     public void setTargetDir(File file) {
         this.targetDir = file;
@@ -61,9 +61,7 @@ public class MediaUtils implements SurfaceHolder.Callback {
         this.targetName = name;
     }
 
-    public String getTargetFilePath(){
-        return targetFile.getPath();
-    }
+    public String getTargetFilePath(){  return targetFile.getPath();  }
 
     public boolean deleteTargetFile(){
         if(targetFile.exists()){
@@ -88,19 +86,6 @@ public class MediaUtils implements SurfaceHolder.Callback {
             }
         });
     }
-
-//    public void setTextureView(AutoFitTextureView view) {
-//        this.textureView = view;
-//        initCamera();
-//        mDetector = new GestureDetector(activity, new ZoomGestureListener());
-//        this.textureView.setOnTouchListener(new View.OnTouchListener() {
-//            @Override
-//            public boolean onTouch(View v, MotionEvent event) {
-//                mDetector.onTouchEvent(event);
-//                return true;
-//            }
-//        });
-//    }
 
     public int getPreviewWidth() {
         return previewWidth;
@@ -143,7 +128,11 @@ public class MediaUtils implements SurfaceHolder.Callback {
                 mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.DEFAULT);
                 mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
                 mMediaRecorder.setProfile(profile);
-                mMediaRecorder.setOrientationHint(or);
+                if (isOpenBackCamera) {
+                    mMediaRecorder.setOrientationHint(90);
+                } else {
+                    mMediaRecorder.setOrientationHint(270);
+                }
 
             } else if(recorderType == MEDIA_AUDIO){
                 mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
@@ -210,12 +199,70 @@ public class MediaUtils implements SurfaceHolder.Callback {
         }
     }
 
-    private void startPreView(SurfaceHolder holder) {
-        if (mCamera == null) {
-            mCamera = Camera.open(Camera.CameraInfo.CAMERA_FACING_BACK);
+    private void setCameraFacing(SurfaceHolder holder) throws IOException{
+
+        int cameraId;
+
+        if (null != mCamera) {
+            mCamera.stopPreview();
+            mCamera.release();
         }
+
+        if (isOpenBackCamera) {
+            cameraId = Camera.CameraInfo.CAMERA_FACING_BACK;
+        } else {
+            cameraId = Camera.CameraInfo.CAMERA_FACING_FRONT;
+        }
+        mCamera = Camera.open(cameraId);
+
+        setCameraDisplayOrientation(cameraId, mCamera);
+
+        mCamera.setPreviewDisplay(holder);
+        mCamera.startPreview();
+    }
+
+    /**  解决前置拍摄翻转问题**/
+    public void setCameraDisplayOrientation(int cameraId, android.hardware.Camera camera)
+    {
+        android.hardware.Camera.CameraInfo info = new android.hardware.Camera.CameraInfo();
+        android.hardware.Camera.getCameraInfo(cameraId,info);
+
+        int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
+
+        int degrees= 0;
+
+        switch(rotation) {
+            case Surface.ROTATION_0 :
+                degrees= 0;
+                break;
+            case Surface.ROTATION_90 :
+                degrees= 90;
+                break;
+            case Surface.ROTATION_180 :
+                degrees= 180;
+                break;
+            case Surface.ROTATION_270 :
+                degrees= 270;
+                break;
+        }
+
+        int result;
+        if(info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+
+            result = (info.orientation + degrees) % 360;
+            result = (360 - result) % 360;// compensate the mirror
+        } else {// back-facing
+            result = (info.orientation - degrees + 360) % 360;
+        }
+
+        camera.setDisplayOrientation(result);//显示翻转result度
+        Log.e("CameraTest", info.facing + "" + result);
+    }
+
+    private void startPreView(SurfaceHolder holder) throws IOException {
+        setCameraFacing(holder);
+
         if (mCamera != null) {
-            mCamera.setDisplayOrientation(or);
             try {
                 mCamera.setPreviewDisplay(holder);
                 Camera.Parameters parameters = mCamera.getParameters();
@@ -226,16 +273,16 @@ public class MediaUtils implements SurfaceHolder.Callback {
                 // Use the same size for recording profile.
                 previewWidth = optimalSize.width;
                 previewHeight = optimalSize.height;
-                parameters.setPreviewSize(previewWidth, previewHeight);
-                profile = CamcorderProfile.get(CamcorderProfile.QUALITY_HIGH);
+                parameters.setPreviewSize(previewWidth / 2, previewHeight / 2);
+                profile = CamcorderProfile.get(CamcorderProfile.QUALITY_480P);
                 // 这里是重点，分辨率和比特率
                 // 分辨率越大视频大小越大，比特率越大视频越清晰
                 // 清晰度由比特率决定，视频尺寸和像素量由分辨率决定
                 // 比特率越高越清晰（前提是分辨率保持不变），分辨率越大视频尺寸越大。
                 profile.videoFrameWidth = optimalSize.width;
                 profile.videoFrameHeight = optimalSize.height;
-                // 这样设置 1080p的视频 大小在5M , 可根据自己需求调节
-                profile.videoBitRate = 2 * optimalSize.width * optimalSize.height;
+                // 这样设置 1080p的视频 大小在3M , 可根据自己需求调节
+                profile.videoBitRate = optimalSize.width * optimalSize.height;
                 List<String> focusModes = parameters.getSupportedFocusModes();
                 if (focusModes != null) {
                     for (String mode : focusModes) {
@@ -276,12 +323,20 @@ public class MediaUtils implements SurfaceHolder.Callback {
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         mSurfaceHolder = holder;
-        startPreView(holder);
+        try {
+            startPreView(holder);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-
+        try {
+            startPreView(holder);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -342,15 +397,20 @@ public class MediaUtils implements SurfaceHolder.Callback {
         }
     }
 
-    private  String getVideoThumb(String path) {
+    // 视频第一屏截图
+    public String getVideoThumb(String path) {
+
+        if (null == path || "".equals(path)) {
+            return "";
+        }
+
         MediaMetadataRetriever media = new MediaMetadataRetriever();
         media.setDataSource(path);
         return bitmap2File(media.getFrameAtTime());
     }
 
     private  String bitmap2File(Bitmap bitmap) {
-        File thumbFile = new File(targetDir,
-                targetName);
+        File thumbFile = new File(targetDir, targetName);
         if (thumbFile.exists()) thumbFile.delete();
         FileOutputStream fOut;
         try {
@@ -364,4 +424,51 @@ public class MediaUtils implements SurfaceHolder.Callback {
         return thumbFile.getAbsolutePath();
     }
 
+    public Bitmap createVideoThumbnail(String filePath) {
+        // MediaMetadataRetriever is available on API Level 8
+        // but is hidden until API Level 10
+        Class<?> clazz = null;
+        Object instance = null;
+        try {
+            clazz = Class.forName("android.media.MediaMetadataRetriever");
+            instance = clazz.newInstance();
+
+            Method method = clazz.getMethod("setDataSource", String.class);
+            method.invoke(instance, filePath);
+
+            // The method name changes between API Level 9 and 10.
+            if (Build.VERSION.SDK_INT <= 9) {
+                return (Bitmap) clazz.getMethod("captureFrame").invoke(instance);
+            } else {
+                byte[] data = (byte[]) clazz.getMethod("getEmbeddedPicture").invoke(instance);
+                if (data != null) {
+                    Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
+                    if (bitmap != null) return bitmap;
+                }
+                return (Bitmap) clazz.getMethod("getFrameAtTime").invoke(instance);
+            }
+        } catch (IllegalArgumentException ex) {
+            // Assume this is a corrupt video file
+        } catch (RuntimeException ex) {
+            // Assume this is a corrupt video file.
+        } catch (InstantiationException e) {
+            Log.e(TAG, "createVideoThumbnail", e);
+        } catch (InvocationTargetException e) {
+            Log.e(TAG, "createVideoThumbnail", e);
+        } catch (ClassNotFoundException e) {
+            Log.e(TAG, "createVideoThumbnail", e);
+        } catch (NoSuchMethodException e) {
+            Log.e(TAG, "createVideoThumbnail", e);
+        } catch (IllegalAccessException e) {
+            Log.e(TAG, "createVideoThumbnail", e);
+        } finally {
+            try {
+                if (instance != null) {
+                    clazz.getMethod("release").invoke(instance);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
 }
